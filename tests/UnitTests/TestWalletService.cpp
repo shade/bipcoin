@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2016, The CryptoNote developers, The Bytecoin developers
+// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
 //
 // This file is part of Bytecoin.
 //
@@ -70,6 +70,7 @@ struct IWalletBaseStub : public CryptoNote::IWallet, public CryptoNote::IFusionM
   virtual std::string createAddress() override { return ""; }
   virtual std::string createAddress(const Crypto::SecretKey& spendSecretKey) override { return ""; }
   virtual std::string createAddress(const Crypto::PublicKey& spendPublicKey) override { return ""; }
+  virtual std::vector<std::string> createAddressList(const std::vector<Crypto::SecretKey>& spendSecretKeys) override { return std::vector<std::string>(); }
   virtual void deleteAddress(const std::string& address) override { }
 
   virtual uint64_t getActualBalance() const override { return 0; }
@@ -121,7 +122,7 @@ struct IWalletBaseStub : public CryptoNote::IWallet, public CryptoNote::IFusionM
   }
 
   // IFusionManager
-  virtual size_t createFusionTransaction(uint64_t threshold, uint64_t mixin,
+  virtual size_t createFusionTransaction(uint64_t threshold, uint16_t mixin,
     const std::vector<std::string>& sourceAddresses = {}, const std::string& destinationAddress = "") override {
     throw std::runtime_error("Not implemented");
   }
@@ -1043,7 +1044,7 @@ public:
     return tx;
   }
 
-  virtual size_t createFusionTransaction(uint64_t threshold, uint64_t mixin,
+  virtual size_t createFusionTransaction(uint64_t threshold, uint16_t mixin,
     const std::vector<std::string>& sourceAddresses = {}, const std::string& destinationAddress = "") override {
 
     lastThreshold = threshold;

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2016, The CryptoNote developers, The Bytecoin developers
+// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
 //
 // This file is part of Bytecoin.
 //
@@ -417,7 +417,7 @@ void WalletSerializerV1::loadSecretKey(Common::IInputStream& source, CryptoConte
 }
 
 void WalletSerializerV1::checkKeys() {
-  throwIfKeysMissmatch(m_viewSecretKey, m_viewPublicKey);
+  throwIfKeysMismatch(m_viewSecretKey, m_viewPublicKey);
 }
 
 void WalletSerializerV1::loadFlags(bool& details, bool& cache, Common::IInputStream& source, CryptoContext& cryptoContext) {
@@ -449,7 +449,7 @@ void WalletSerializerV1::loadWallets(Common::IInputStream& source, CryptoContext
     }
 
     if (dto.spendSecretKey != NULL_SECRET_KEY) {
-      throwIfKeysMissmatch(dto.spendSecretKey, dto.spendPublicKey, "Restored spend public key doesn't correspond to secret key");
+      throwIfKeysMismatch(dto.spendSecretKey, dto.spendPublicKey, "Restored spend public key doesn't correspond to secret key");
     } else {
       if (!Crypto::check_key(dto.spendPublicKey)) {
         throw std::system_error(make_error_code(error::WRONG_PASSWORD), "Public spend key is incorrect");

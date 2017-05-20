@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2016, The CryptoNote developers, The Bytecoin developers
+// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
 //
 // This file is part of Bytecoin.
 //
@@ -36,6 +36,7 @@
 #include "CryptoNoteCore/TransactionExtra.h"
 
 #include <System/EventLock.h>
+#include <System/RemoteContext.h>
 
 #include "PaymentServiceJsonRpcMessages.h"
 #include "NodeFactory.h"
@@ -91,7 +92,11 @@ bool getPaymentIdFromExtra(const std::string& binaryString, Crypto::Hash& paymen
 std::string getPaymentIdStringFromExtra(const std::string& binaryString) {
   Crypto::Hash paymentId;
 
-  if (!getPaymentIdFromExtra(binaryString, paymentId)) {
+  try {
+    if (!getPaymentIdFromExtra(binaryString, paymentId)) {
+      return std::string();
+    }
+  } catch (std::exception&) {
     return std::string();
   }
 
@@ -189,7 +194,9 @@ std::vector<CryptoNote::TransactionsInBlockInfo> filterTransactions(
       }
     }
 
-    result.push_back(std::move(item));
+    if (!block.transactions.empty()) {
+      result.push_back(std::move(item));
+    }
   }
 
   return result;
@@ -399,6 +406,31 @@ std::error_code WalletService::saveWalletNoThrow() {
   return std::error_code();
 }
 
+std::error_code WalletService::exportWallet(const std::string& fileName) {
+  try {
+    System::EventLock lk(readyEvent);
+
+    if (!inited) {
+      logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Export impossible: Wallet Service is not initialized";
+      return make_error_code(CryptoNote::error::NOT_INITIALIZED);
+    }
+
+    boost::filesystem::path walletPath(config.walletFile);
+    boost::filesystem::path exportPath = walletPath.parent_path() / fileName;
+
+    logger(Logging::INFO, Logging::BRIGHT_WHITE) << "Exporting wallet to " << exportPath.string();
+    wallet.exportWallet(exportPath.string());
+  } catch (std::system_error& x) {
+    logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Error while exporting wallet: " << x.what();
+    return x.code();
+  } catch (std::exception& x) {
+    logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Error while exporting wallet: " << x.what();
+    return make_error_code(CryptoNote::error::INTERNAL_WALLET_ERROR);
+  }
+
+  return std::error_code();
+}
+
 std::error_code WalletService::resetWallet() {
   try {
     System::EventLock lk(readyEvent);
@@ -471,6 +503,43 @@ std::error_code WalletService::createAddress(const std::string& spendSecretKeyTe
   }
 
   logger(Logging::DEBUGGING) << "Created address " << address;
+
+  return std::error_code();
+}
+
+std::error_code WalletService::createAddressList(const std::vector<std::string>& spendSecretKeysText, std::vector<std::string>& addresses) {
+  try {
+    System::EventLock lk(readyEvent);
+
+    logger(Logging::DEBUGGING) << "Creating " << spendSecretKeysText.size() << " addresses...";
+
+    std::vector<Crypto::SecretKey> secretKeys;
+    std::unordered_set<std::string> unique;
+    secretKeys.reserve(spendSecretKeysText.size());
+    unique.reserve(spendSecretKeysText.size());
+    for (auto& keyText : spendSecretKeysText) {
+      auto insertResult = unique.insert(keyText);
+      if (!insertResult.second) {
+        logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Not unique key";
+        return make_error_code(CryptoNote::error::WalletServiceErrorCode::DUPLICATE_KEY);
+      }
+
+      Crypto::SecretKey key;
+      if (!Common::podFromHex(keyText, key)) {
+        logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Wrong key format: " << keyText;
+        return make_error_code(CryptoNote::error::WalletServiceErrorCode::WRONG_KEY_FORMAT);
+      }
+
+      secretKeys.push_back(std::move(key));
+    }
+
+    addresses = wallet.createAddressList(secretKeys);
+  } catch (std::system_error& x) {
+    logger(Logging::WARNING, Logging::BRIGHT_YELLOW) << "Error while creating addresses: " << x.what();
+    return x.code();
+  }
+
+  logger(Logging::DEBUGGING) << "Created " << addresses.size() << " addresses";
 
   return std::error_code();
 }
@@ -931,8 +1000,18 @@ std::error_code WalletService::getStatus(uint32_t& blockCount, uint32_t& knownBl
   try {
     System::EventLock lk(readyEvent);
 
-    knownBlockCount = node.getKnownBlockCount();
-    peerCount = static_cast<uint32_t>(node.getPeerCount());
+    System::RemoteContext<std::pair<uint32_t, uint32_t>> remoteContext(dispatcher, [this] () {
+      std::pair<uint32_t, uint32_t> res;
+      res.first = node.getKnownBlockCount();
+      res.second = static_cast<uint32_t>(node.getPeerCount());
+
+      return res;
+    });
+
+    auto remoteResult = remoteContext.get();
+    knownBlockCount = remoteResult.first;
+    peerCount = remoteResult.second;
+
     blockCount = wallet.getBlockCount();
 
     auto lastHashes = wallet.getBlockHashes(blockCount - 1, 1);
